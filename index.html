@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Little Diver</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b4f7c; }
+  canvas { display: block; width: 100vw; height: 100vh; height: 100dvh; touch-action: none; cursor: crosshair; }
+</style>
+</head>
+<body>
+<canvas id="sea" aria-label="A cartoon scuba diver swimming in the ocean"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('sea');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, S = 1, floorBase = 0;
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const TAU = Math.PI * 2;
+
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  /* ---------- sizing ---------- */
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    S = Math.max(0.55, Math.min(W, H) / 560);   // overall scale of creatures
+    floorBase = H * 0.88;
+    diver.x = Math.min(Math.max(diver.x, 40), W - 40);
+    diver.y = Math.min(diver.y, floorBase - 70 * S);
+    target.x = Math.min(target.x, W); target.y = Math.min(target.y, H);
+  }
+  const floorY = x => floorBase + Math.sin(x * 0.011) * 7 * S + Math.sin(x * 0.027 + 2) * 4 * S;
+
+  /* ---------- the diver ---------- */
+  const diver = { x: 0, y: 0, vx: 0, vy: 0, face: 1, flip: 1, kick: 0 };
+  const target = { x: 0, y: 0 };
+  let hasTarget = false;
+
+  /* ---------- pointer (mouse + touch) ---------- */
+  function point(e) { target.x = e.clientX; target.y = e.clientY; hasTarget = true; }
+  window.addEventListener('pointermove', point, { passive: true });
+  window.addEventListener('pointerdown', e => { point(e); }, { passive: true });
+  canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+  /* ---------- bubbles ---------- */
+  const bubbles = [];
+  let bubbleTimer = 0;
+  function spawnBubble(x, y, size) {
+    bubbles.push({
+      x, y, r: size || rand(2, 6.5) * S,
+      vy: rand(45, 95) * S, ph: rand(0, TAU), amp: rand(4, 14) * S,
+      fr: rand(1.5, 3.2), x0: x
+    });
+  }
+
+  /* ---------- sea life ---------- */
+  const fishColors = [['#ff8a3d', '#ffd166'], ['#ff5d8f', '#ffb3c7'], ['#ffd23f', '#fff1a8'], ['#3ddc97', '#b8f2d8'], ['#9b6bff', '#d3c2ff']];
+  const fish = [];
+  for (let i = 0; i < 6; i++) {
+    const c = fishColors[i % fishColors.length];
+    fish.push({
+      x: rand(0, 1), y: rand(0.12, 0.62), dir: Math.random() < 0.5 ? -1 : 1,
+      sp: rand(14, 34), size: rand(0.8, 1.35), c1: c[0], c2: c[1], ph: rand(0, TAU)
+    });
+  }
+  const weeds = [];
+  for (let i = 0; i < 14; i++) weeds.push({ fx: (i + rand(0.1, 0.9)) / 14, h: rand(60, 150), ph: rand(0, TAU), hue: rand(135, 160), n: Math.random() < 0.5 ? 2 : 3 });
+  const octos = [
+    { fx: 0.14, col: '#ff6b81', ph: 0, size: 1 },
+    { fx: 0.55, col: '#b78cff', ph: 2, size: 0.85 },
+    { fx: 0.86, col: '#ff9f5a', ph: 4, size: 1.1 }
+  ];
+  const turtle = { x: -0.1, fy: 0.74, sp: 9, ph: 0 };
+  const pebbles = [];
+  for (let i = 0; i < 40; i++) pebbles.push({ fx: Math.random(), dy: rand(14, 70), r: rand(1.5, 5), a: rand(0.15, 0.4), shell: Math.random() < 0.12 });
+
+  /* ---------- drawing helpers ---------- */
+  function drawBackground(t) {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#49c5e8'); g.addColorStop(0.45, '#1c8fc4'); g.addColorStop(1, '#0a4a78');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // soft light rays
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const x = W * (0.1 + i * 0.22) + Math.sin(t * 0.0002 + i) * 40;
+      const gr = ctx.createLinearGradient(x, 0, x, H * 0.8);
+      gr.addColorStop(0, 'rgba(255,255,255,0.13)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.moveTo(x - 20 * S, 0); ctx.lineTo(x + 30 * S, 0);
+      ctx.lineTo(x + 130 * S, H * 0.8); ctx.lineTo(x + 40 * S, H * 0.8);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawSand() {
+    const g = ctx.createLinearGradient(0, floorBase - 20, 0, H);
+    g.addColorStop(0, '#f6dc9b'); g.addColorStop(1, '#d9b36a');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (let x = 0; x <= W + 8; x += 8) ctx.lineTo(x, floorY(x));
+    ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+    for (const p of pebbles) {
+      const x = p.fx * W, y = floorY(x) + p.dy * S * 0.6 + 6;
+      if (y > H) continue;
+      if (p.shell) {
+        ctx.fillStyle = 'rgba(255,240,235,0.85)';
+        ctx.beginPath(); ctx.arc(x, y, 5 * S, Math.PI, 0); ctx.fill();
+      } else {
+        ctx.fillStyle = `rgba(120,85,40,${p.a})`;
+        ctx.beginPath(); ctx.ellipse(x, y, p.r * S * 1.5, p.r * S, 0, 0, TAU); ctx.fill();
+      }
+    }
+  }
+
+  function drawWeed(w, t) {
+    const x = w.fx * W, base = floorY(x) + 8, h = w.h * S;
+    for (let k = 0; k < w.n; k++) {
+      const off = (k - (w.n - 1) / 2) * 9 * S, hh = h * (1 - k * 0.15);
+      ctx.strokeStyle = `hsl(${w.hue + k * 6},55%,${34 + k * 6}%)`;
+      ctx.lineWidth = 7 * S; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x + off, base);
+      const sw = Math.sin(t * 0.0016 + w.ph + k) * 16 * S;
+      ctx.bezierCurveTo(x + off - sw, base - hh * 0.35, x + off + sw, base - hh * 0.7, x + off + sw * 0.6, base - hh);
+      ctx.stroke();
+    }
+  }
+
+  function drawOcto(o, t) {
+    const x = o.fx * W, s = S * o.size;
+    const y = floorY(x) - 6 * s + Math.sin(t * 0.002 + o.ph) * 3 * s;
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    ctx.strokeStyle = o.col; ctx.lineWidth = 8; ctx.lineCap = 'round';
+    for (let i = 0; i < 6; i++) {
+      const a = (i - 2.5) * 13, wv = Math.sin(t * 0.003 + o.ph + i) * 6;
+      ctx.beginPath(); ctx.moveTo(a * 0.6, -4);
+      ctx.bezierCurveTo(a * 1.4 + wv, 8, a * 2.2 - wv, 4, a * 2.6 + wv, 14);
+      ctx.stroke();
+    }
+    ctx.fillStyle = o.col;
+    ctx.beginPath(); ctx.ellipse(0, -24, 24, 26, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.beginPath(); ctx.ellipse(-9, -36, 6, 9, -0.5, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-9, -20, 7, 0, TAU); ctx.arc(9, -20, 7, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#222';
+    ctx.beginPath(); ctx.arc(-8, -19, 3.3, 0, TAU); ctx.arc(10, -19, 3.3, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#7a2a3b'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(0, -10, 5, 0.2, Math.PI - 0.2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawFish(f, t) {
+    const x = f.x * W, y = f.y * H + Math.sin(t * 0.0012 + f.ph) * 14 * S;
+    ctx.save(); ctx.translate(x, y); ctx.scale(f.dir * f.size * S, f.size * S);
+    const wag = Math.sin(t * 0.008 + f.ph) * 5;
+    ctx.fillStyle = f.c1;
+    ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(-27, -9 + wag); ctx.lineTo(-27, 9 + wag); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, 17, 11, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = f.c2;
+    ctx.beginPath(); ctx.ellipse(2, 4, 11, 5, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(8, -3, 3.6, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(9, -3, 1.8, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawTurtle(t) {
+    const x = turtle.x * W, y = turtle.fy * H + Math.sin(t * 0.0015) * 6 * S;
+    const s = S * 0.7, fl = Math.sin(t * 0.004) * 0.5;
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    ctx.fillStyle = '#7fc96a';
+    ctx.beginPath(); ctx.ellipse(21, -2, 8, 7, 0, 0, TAU); ctx.fill();             // head
+    ctx.save(); ctx.translate(8, 8); ctx.rotate(fl); ctx.beginPath(); ctx.ellipse(6, 3, 9, 4, 0.5, 0, TAU); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(-10, 8); ctx.rotate(-fl); ctx.beginPath(); ctx.ellipse(-4, 3, 7, 3.5, -0.4, 0, TAU); ctx.fill(); ctx.restore();
+    ctx.fillStyle = '#c98b3b';
+    ctx.beginPath(); ctx.ellipse(0, 0, 19, 13, 0, Math.PI, 0); ctx.closePath(); ctx.fill(); // shell
+    ctx.fillStyle = '#e4ad5c';
+    ctx.beginPath(); ctx.arc(-6, -6, 3.5, 0, TAU); ctx.arc(5, -7, 3.5, 0, TAU); ctx.arc(0, -2, 3, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(24, -4, 2.4, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(24.6, -4, 1.2, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawDiver(t) {
+    const s = S * 1.15;
+    const bob = Math.sin(t * 0.002) * 5 * S;
+    const tilt = Math.max(-0.5, Math.min(0.5, Math.atan2(diver.vy, Math.abs(diver.vx) + 60) * 0.8));
+    ctx.save();
+    ctx.translate(diver.x, diver.y + bob);
+    ctx.scale(diver.flip * s, s);   // flip = smooth turn left/right
+    ctx.rotate(tilt * Math.sign(diver.flip || 1));
+    const k = Math.sin(diver.kick) * 7;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+    // far leg + flipper
+    ctx.strokeStyle = '#1d3a5f'; ctx.lineWidth = 9;
+    ctx.beginPath(); ctx.moveTo(-18, 2); ctx.lineTo(-44, 7 - k); ctx.stroke();
+    ctx.fillStyle = '#ff9f1c';
+    ctx.beginPath(); ctx.ellipse(-52, 8 - k * 1.2, 11, 5, -0.2 - k * 0.03, 0, TAU); ctx.fill();
+    // tank + straps
+    ctx.fillStyle = '#c9d4dc'; rr(-26, -25, 30, 13, 6); ctx.fill();
+    ctx.fillStyle = '#8ea0ad'; rr(-26, -25, 8, 13, 4); ctx.fill();
+    ctx.fillStyle = '#ffcf4d'; ctx.fillRect(-4, -23, 4, 9);
+    // body
+    ctx.fillStyle = '#24406a';
+    ctx.beginPath(); ctx.ellipse(0, -2, 27, 13, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#ff9f1c'; ctx.fillRect(-6, -14, 5, 24);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath(); ctx.ellipse(2, -9, 16, 3.5, 0, 0, TAU); ctx.fill();
+    // near leg + flipper
+    ctx.strokeStyle = '#2d4d7c'; ctx.lineWidth = 9;
+    ctx.beginPath(); ctx.moveTo(-18, 5); ctx.lineTo(-46, 11 + k); ctx.stroke();
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath(); ctx.ellipse(-54, 12 + k * 1.2, 11, 5, 0.2 + k * 0.03, 0, TAU); ctx.fill();
+    // arm
+    ctx.strokeStyle = '#2d4d7c'; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(12, 3); ctx.lineTo(28, 12 + k * 0.4); ctx.stroke();
+    ctx.fillStyle = '#ffd2a8'; ctx.beginPath(); ctx.arc(32, 13 + k * 0.4, 5, 0, TAU); ctx.fill();
+    // head
+    ctx.fillStyle = '#ffd2a8'; ctx.beginPath(); ctx.arc(33, -5, 13, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#24406a';   // hood
+    ctx.beginPath(); ctx.arc(31, -6, 14, Math.PI * 0.55, Math.PI * 1.75); ctx.lineTo(31, -6); ctx.closePath(); ctx.fill();
+    // mask
+    ctx.fillStyle = '#ff9f1c'; rr(32, -13, 17, 13, 6); ctx.fill();
+    ctx.fillStyle = '#bfefff'; rr(35, -11, 12, 9, 4); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(42, -7, 3.2, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(43, -7, 1.7, 0, TAU); ctx.fill();
+    // mouthpiece + hose
+    ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(45, 3, 3.5, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#444'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(4, -20); ctx.quadraticCurveTo(24, -26, 42, 4); ctx.stroke();
+    ctx.restore();
+  }
+
+  /* ---------- update ---------- */
+  function update(dt, t) {
+    // diver glides toward the pointer (gentle spring, no jerks)
+    if (hasTarget) {
+      const k = 2.6, d = 3.4;
+      const ax = (target.x - diver.x) * k - diver.vx * d;
+      const ay = (target.y - diver.y) * k - diver.vy * d;
+      diver.vx += ax * dt; diver.vy += ay * dt;
+      diver.x += diver.vx * dt; diver.y += diver.vy * dt;
+      const dx = target.x - diver.x;
+      if (dx > 30) diver.face = 1; else if (dx < -30) diver.face = -1;
+    }
+    diver.y = Math.min(diver.y, floorBase - 50 * S);
+    diver.y = Math.max(diver.y, 30 * S);
+    diver.flip += (diver.face - diver.flip) * Math.min(1, dt * 7);
+    const speed = Math.hypot(diver.vx, diver.vy);
+    diver.kick += dt * (3 + Math.min(speed / 40, 9));
+
+    // bubbles rise from the mouthpiece
+    bubbleTimer -= dt;
+    while (bubbleTimer <= 0) {
+      const s = 1.15 * S;
+      spawnBubble(diver.x + diver.flip * 45 * s, diver.y + Math.sin(t * 0.002) * 5 * S + 3 * s);
+      bubbleTimer += rand(0.12, 0.32);
+    }
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      const b = bubbles[i];
+      b.y -= b.vy * dt; b.ph += b.fr * dt;
+      b.x = b.x0 + Math.sin(b.ph) * b.amp;
+      b.r += dt * 0.6 * S;
+      if (b.y < -20) bubbles.splice(i, 1);
+    }
+
+    for (const f of fish) {
+      f.x += f.dir * f.sp * dt / W;
+      if (f.dir > 0 && f.x > 1.08) { f.dir = -1; f.y = rand(0.12, 0.62); }
+      else if (f.dir < 0 && f.x < -0.08) { f.dir = 1; f.y = rand(0.12, 0.62); }
+    }
+    turtle.x += turtle.sp * dt / W;
+    if (turtle.x > 1.1) { turtle.x = -0.1; turtle.fy = rand(0.7, 0.8); }
+  }
+
+  function drawBubbles() {
+    for (const b of bubbles) {
+      const a = Math.min(1, b.y / (H * 0.12));   // fade near the top
+      ctx.globalAlpha = Math.max(0, a);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath(); ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, Math.max(0.8, b.r * 0.25), 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---------- main loop ---------- */
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    update(dt, now);
+    drawBackground(now);
+    for (const f of fish) drawFish(f, now);
+    drawSand();
+    for (const w of weeds) drawWeed(w, now);
+    for (const o of octos) drawOcto(o, now);
+    drawTurtle(now);
+    drawBubbles();
+    drawDiver(now);
+    requestAnimationFrame(frame);
+  }
+
+  window.addEventListener('resize', resize);
+  diver.x = window.innerWidth / 2; diver.y = window.innerHeight * 0.4;
+  target.x = diver.x; target.y = diver.y;
+  resize();
+  // start fish at random spots along the width
+  fish.forEach(f => { f.x = Math.random(); });
+  turtle.x = 0.25;
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
