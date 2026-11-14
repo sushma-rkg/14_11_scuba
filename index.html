@@ -68,8 +68,22 @@
   }
 
   /* ---------- sea life ---------- */
+  const fishColors = [['#ff8a3d', '#ffd166'], ['#ff5d8f', '#ffb3c7'], ['#ffd23f', '#fff1a8'], ['#3ddc97', '#b8f2d8'], ['#9b6bff', '#d3c2ff']];
+  const fish = [];
+  for (let i = 0; i < 6; i++) {
+    const c = fishColors[i % fishColors.length];
+    fish.push({
+      x: rand(0, 1), y: rand(0.12, 0.62), dir: Math.random() < 0.5 ? -1 : 1,
+      sp: rand(14, 34), size: rand(0.8, 1.35), c1: c[0], c2: c[1], ph: rand(0, TAU)
+    });
+  }
   const weeds = [];
   for (let i = 0; i < 14; i++) weeds.push({ fx: (i + rand(0.1, 0.9)) / 14, h: rand(60, 150), ph: rand(0, TAU), hue: rand(135, 160), n: Math.random() < 0.5 ? 2 : 3 });
+  const octos = [
+    { fx: 0.14, col: '#ff6b81', ph: 0, size: 1 },
+    { fx: 0.55, col: '#b78cff', ph: 2, size: 0.85 },
+    { fx: 0.86, col: '#ff9f5a', ph: 4, size: 1.1 }
+  ];
   const pebbles = [];
   for (let i = 0; i < 40; i++) pebbles.push({ fx: Math.random(), dy: rand(14, 70), r: rand(1.5, 5), a: rand(0.15, 0.4), shell: Math.random() < 0.12 });
 
@@ -125,6 +139,44 @@
       ctx.bezierCurveTo(x + off - sw, base - hh * 0.35, x + off + sw, base - hh * 0.7, x + off + sw * 0.6, base - hh);
       ctx.stroke();
     }
+  }
+
+  function drawOcto(o, t) {
+    const x = o.fx * W, s = S * o.size;
+    const y = floorY(x) - 6 * s + Math.sin(t * 0.002 + o.ph) * 3 * s;
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    ctx.strokeStyle = o.col; ctx.lineWidth = 8; ctx.lineCap = 'round';
+    for (let i = 0; i < 6; i++) {
+      const a = (i - 2.5) * 13, wv = Math.sin(t * 0.003 + o.ph + i) * 6;
+      ctx.beginPath(); ctx.moveTo(a * 0.6, -4);
+      ctx.bezierCurveTo(a * 1.4 + wv, 8, a * 2.2 - wv, 4, a * 2.6 + wv, 14);
+      ctx.stroke();
+    }
+    ctx.fillStyle = o.col;
+    ctx.beginPath(); ctx.ellipse(0, -24, 24, 26, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.beginPath(); ctx.ellipse(-9, -36, 6, 9, -0.5, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-9, -20, 7, 0, TAU); ctx.arc(9, -20, 7, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#222';
+    ctx.beginPath(); ctx.arc(-8, -19, 3.3, 0, TAU); ctx.arc(10, -19, 3.3, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#7a2a3b'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(0, -10, 5, 0.2, Math.PI - 0.2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawFish(f, t) {
+    const x = f.x * W, y = f.y * H + Math.sin(t * 0.0012 + f.ph) * 14 * S;
+    ctx.save(); ctx.translate(x, y); ctx.scale(f.dir * f.size * S, f.size * S);
+    const wag = Math.sin(t * 0.008 + f.ph) * 5;
+    ctx.fillStyle = f.c1;
+    ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(-27, -9 + wag); ctx.lineTo(-27, 9 + wag); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, 17, 11, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = f.c2;
+    ctx.beginPath(); ctx.ellipse(2, 4, 11, 5, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(8, -3, 3.6, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(9, -3, 1.8, 0, TAU); ctx.fill();
+    ctx.restore();
   }
 
   function drawDiver(t) {
@@ -223,7 +275,11 @@
       b.r += dt * 0.6 * S;
       if (b.y < -20) bubbles.splice(i, 1);
     }
-
+    for (const f of fish) {
+      f.x += f.dir * f.sp * dt / W;
+      if (f.dir > 0 && f.x > 1.08) { f.dir = -1; f.y = rand(0.12, 0.62); }
+      else if (f.dir < 0 && f.x < -0.08) { f.dir = 1; f.y = rand(0.12, 0.62); }
+    }
   }
 
   function drawBubbles() {
@@ -245,8 +301,10 @@
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     update(dt, now);
     drawBackground(now);
+    for (const f of fish) drawFish(f, now);
     drawSand();
     for (const w of weeds) drawWeed(w, now);
+    for (const o of octos) drawOcto(o, now);
     drawBubbles();
     drawDiver(now);
     requestAnimationFrame(frame);
@@ -256,6 +314,7 @@
   diver.x = window.innerWidth / 2; diver.y = window.innerHeight * 0.4;
   target.x = diver.x; target.y = diver.y;
   resize();
+  fish.forEach(f => { f.x = Math.random(); });
   requestAnimationFrame(frame);
 })();
 </script>
