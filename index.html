@@ -142,7 +142,7 @@
   }
 
   function drawOcto(o, t) {
-    const x = o.fx * W, s = S * o.size;
+    const x = o.fx * W, s = S * o.size * 0.7;
     const y = floorY(x) - 6 * s + Math.sin(t * 0.002 + o.ph) * 3 * s;
     ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
     ctx.strokeStyle = o.col; ctx.lineWidth = 8; ctx.lineCap = 'round';
